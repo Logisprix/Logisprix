@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Logisprix AI Sales Assistant
  * Description: Asistente comercial basado en contenido WordPress y captacion consentida de leads.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Requires PHP: 7.4
  * Text Domain: logisprix-ai
  */
@@ -99,7 +99,7 @@ final class Logisprix_AI_Sales {
   $email=sanitize_email($r->get_param('email'));$name=sanitize_text_field($r->get_param('name'));
   $company=sanitize_text_field($r->get_param('company'));$question=sanitize_textarea_field($r->get_param('question'));
   if($r->get_param('website'))return new WP_Error('spam','Solicitud rechazada',['status'=>400]);
-  if(!is_email($email)||!$name||mb_strlen($name)>190||mb_strlen($company)>190||mb_strlen($question)>2000||!$r->get_param('consent'))return new WP_Error('invalid','Revisa los campos y acepta la politica de privacidad',['status'=>400]);
+  if(!is_email($email)||!$name||mb_strlen($name)>190||mb_strlen($company)>190||mb_strlen($question)>2000||$r->get_param('consent')!=='on')return new WP_Error('invalid','Revisa los campos y acepta la politica de privacidad',['status'=>400]);
   global $wpdb;
   $ok=$wpdb->insert($wpdb->prefix.'logisprix_ai_leads',['email'=>$email,'name'=>mb_substr($name,0,190),'company'=>mb_substr($company,0,190),'question'=>$question,'created_at'=>current_time('mysql')],['%s','%s','%s','%s','%s']);
   if(!$ok)return new WP_Error('storage','No se pudo guardar la solicitud',['status'=>500]);

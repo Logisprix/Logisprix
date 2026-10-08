@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Logisprix AI Sales Assistant
  * Description: Asistente comercial basado en contenido WordPress y captacion consentida de leads.
- * Version: 0.1.0
+ * Version: 0.2.0
  * Requires PHP: 7.4
  * Text Domain: logisprix-ai
  */
@@ -14,10 +14,12 @@ final class Logisprix_AI_Sales {
   add_action('admin_init',[__CLASS__,'settings']);
   add_action('rest_api_init',[__CLASS__,'routes']);
   add_shortcode('logisprix_ai_chat',[__CLASS__,'widget']);
+  add_action('admin_post_logisprix_ai_export',[__CLASS__,'export']);
  }
  static function settings(){
   register_setting('logisprix_ai',self::OPT,['sanitize_callback'=>function($v){
-   return ['api_key'=>sanitize_text_field($v['api_key']??''),'sales_email'=>sanitize_email($v['sales_email']??''),'model'=>sanitize_text_field($v['model']??'gpt-4.1-mini')];
+   $old=get_option(self::OPT,[]);
+   return ['api_key'=>!empty($v['api_key'])?sanitize_text_field($v['api_key']):($old['api_key']??''),'sales_email'=>sanitize_email($v['sales_email']??''),'model'=>sanitize_text_field($v['model']??'gpt-4.1-mini')];
   }]);
  }
  static function menu(){
@@ -31,13 +33,22 @@ final class Logisprix_AI_Sales {
   $o=get_option(self::OPT,[]);
   echo '<div class="wrap"><h1>Logisprix AI Sales Assistant</h1><form method="post" action="options.php">';
   settings_fields('logisprix_ai');
-  echo '<p>Clave API OpenAI <input type="password" autocomplete="off" name="'.esc_attr(self::OPT).'[api_key]" value="'.esc_attr($o['api_key']??'').'" size="48"></p>';
+  echo '<p>Clave API OpenAI <input type="password" autocomplete="off" name="'.esc_attr(self::OPT).'[api_key]" value="" placeholder="Dejar vacio para conservar la clave" size="48"></p>';
   echo '<p>Email comercial <input type="email" name="'.esc_attr(self::OPT).'[sales_email]" value="'.esc_attr($o['sales_email']??get_option('admin_email')).'"></p>';
   echo '<p>Modelo <input name="'.esc_attr(self::OPT).'[model]" value="'.esc_attr($o['model']??'gpt-4.1-mini').'"></p>';
   submit_button();
-  echo '</form><p>Inserta el shortcode <code>[logisprix_ai_chat]</code> en una pagina.</p><h2>Ultimos leads</h2><table class="widefat striped"><thead><tr><th>Fecha</th><th>Nombre</th><th>Email</th><th>Empresa</th><th>Consulta</th></tr></thead><tbody>';
+  echo '</form><p><a class="button" href="'.esc_url(wp_nonce_url(admin_url('admin-post.php?action=logisprix_ai_export'),'logisprix_ai_export')).'">Exportar leads CSV</a></p><p>Inserta el shortcode <code>[logisprix_ai_chat]</code> en una pagina.</p><h2>Ultimos leads</h2><table class="widefat striped"><thead><tr><th>Fecha</th><th>Nombre</th><th>Email</th><th>Empresa</th><th>Consulta</th></tr></thead><tbody>';
   foreach($leads?:[] as $l)echo '<tr><td>'.esc_html($l->created_at).'</td><td>'.esc_html($l->name).'</td><td>'.esc_html($l->email).'</td><td>'.esc_html($l->company).'</td><td>'.esc_html($l->question).'</td></tr>';
   echo '</tbody></table></div>';
+ }
+ static function export(){
+  if(!current_user_can('manage_options')||!check_admin_referer('logisprix_ai_export'))wp_die('Acceso denegado');
+  global $wpdb;$table=$wpdb->prefix.'logisprix_ai_leads';
+  $rows=$wpdb->get_results("SELECT created_at,name,email,company,question FROM `$table` ORDER BY id DESC LIMIT 10000",ARRAY_A);
+  nocache_headers();header('Content-Type: text/csv; charset=utf-8');header('Content-Disposition: attachment; filename="logisprix-leads.csv"');
+  $out=fopen('php://output','w');fputcsv($out,['fecha','nombre','email','empresa','consulta']);
+  foreach($rows as $row){foreach($row as &$cell){if(preg_match('/^[=+@\\-]/u',(string)$cell))$cell="'".$cell;}unset($cell);fputcsv($out,array_values($row));}
+  fclose($out);exit;
  }
  static function activate(){
   global $wpdb;
@@ -61,7 +72,7 @@ final class Logisprix_AI_Sales {
  static function chat($r){
   $limit=self::throttle($r);if(is_wp_error($limit))return $limit;
   $q=sanitize_textarea_field($r->get_param('message'));
-  if(!$q||mb_strlen($q)>1500)return new WP_Error('invalid','Consulta no valida',['status'=>400]);
+  if(!is_string($q)||!$q||mb_strlen($q)>1500)return new WP_Error('invalid','Consulta no valida',['status'=>400]);
   $commercial=(bool)preg_match('/presupuesto|precio personalizado|cotizaci[oó]n|oferta|comprar|contacto|comercial|instalaci[oó]n|proyecto a medida|visita comercial/i',$q);
   if($commercial)return ['answer'=>'Un comercial especializado puede ayudarte. Completa el formulario para que se ponga en contacto contigo.','handoff'=>true];
   $o=get_option(self::OPT,[]);$key=defined('LOGISPRIX_OPENAI_API_KEY')?LOGISPRIX_OPENAI_API_KEY:($o['api_key']??'');
@@ -87,7 +98,8 @@ final class Logisprix_AI_Sales {
   $limit=self::throttle($r);if(is_wp_error($limit))return $limit;
   $email=sanitize_email($r->get_param('email'));$name=sanitize_text_field($r->get_param('name'));
   $company=sanitize_text_field($r->get_param('company'));$question=sanitize_textarea_field($r->get_param('question'));
-  if(!is_email($email)||!$name||mb_strlen($question)>2000||!$r->get_param('consent'))return new WP_Error('invalid','Revisa los campos y acepta la politica de privacidad',['status'=>400]);
+  if($r->get_param('website'))return new WP_Error('spam','Solicitud rechazada',['status'=>400]);
+  if(!is_email($email)||!$name||mb_strlen($name)>190||mb_strlen($company)>190||mb_strlen($question)>2000||!$r->get_param('consent'))return new WP_Error('invalid','Revisa los campos y acepta la politica de privacidad',['status'=>400]);
   global $wpdb;
   $ok=$wpdb->insert($wpdb->prefix.'logisprix_ai_leads',['email'=>$email,'name'=>mb_substr($name,0,190),'company'=>mb_substr($company,0,190),'question'=>$question,'created_at'=>current_time('mysql')],['%s','%s','%s','%s','%s']);
   if(!$ok)return new WP_Error('storage','No se pudo guardar la solicitud',['status'=>500]);
@@ -104,6 +116,7 @@ final class Logisprix_AI_Sales {
    <form class="lpx-chat"><label>Tu consulta <textarea required maxlength="1500" style="width:100%"></textarea></label><button type="submit">Preguntar</button></form>
    <form class="lpx-lead" hidden>
     <h4>Solicitar contacto comercial</h4>
+    <label style="position:absolute;left:-10000px" aria-hidden="true">Sitio web <input name="website" tabindex="-1" autocomplete="off"></label>
     <label>Nombre <input name="name" required maxlength="190"></label>
     <label>Empresa <input name="company" maxlength="190"></label>
     <label>Email <input name="email" type="email" required></label>

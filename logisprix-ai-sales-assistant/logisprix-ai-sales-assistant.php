@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Logisprix AI Sales Assistant
  * Description: Asistente comercial basado en contenido WordPress y captacion consentida de leads.
- * Version: 0.3.0
+ * Version: 0.4.0
  * Requires PHP: 7.4
  * Text Domain: logisprix-ai
  */
@@ -134,5 +134,6 @@ final class Logisprix_AI_Sales {
   <?php return ob_get_clean();
  }
 }
+require_once __DIR__.'/includes/live-chat.php';
 register_activation_hook(__FILE__,['Logisprix_AI_Sales','activate']);
 Logisprix_AI_Sales::init();

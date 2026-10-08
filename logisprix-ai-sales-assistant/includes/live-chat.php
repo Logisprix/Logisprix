@@ -86,10 +86,11 @@ final class Logisprix_AI_Live {
   $wpdb->update($wpdb->prefix.'logisprix_ai_conversations',['updated_at'=>current_time('mysql')],['id'=>$id]);
  }
  static function visitor($r){
-  $l=self::limit($r);if(is_wp_error($l))return $l;
+  $action=$r->get_param('action');
+  if($action!=='poll'){$l=self::limit($r);if(is_wp_error($l))return $l;}
   $c=self::conversation($r->get_param('id'),$r->get_param('token'));
   if(!$c)return new WP_Error('forbidden','Sesión inválida',['status'=>403]);
-  $action=$r->get_param('action');$after=max(0,(int)$r->get_param('after'));
+  $after=max(0,(int)$r->get_param('after'));
   if($action==='send'){
    $body=sanitize_textarea_field($r->get_param('message'));
    if(!$body||mb_strlen($body)>1500)return new WP_Error('invalid','Mensaje inválido',['status'=>400]);

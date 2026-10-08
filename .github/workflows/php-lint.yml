@@ -1,0 +1,13 @@
+name: WordPress plugin PHP syntax
+on:
+  push:
+    branches: [feature/ai-sales-assistant]
+  pull_request:
+    branches: [main]
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint PHP
+        run: find logisprix-ai-sales-assistant -name '*.php' -print0 | xargs -0 -n1 php -l
